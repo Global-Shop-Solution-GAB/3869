@@ -1,0 +1,303 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.UDT.uWorkorder.Define("JOB",String,JOB)
+Variable.UDT.uWorkorder.Define("SUFFIX",String,SUFFIX)
+Variable.UDT.uWorkorder.Define("PART",String,PART)
+Variable.uGlobal.uWorkorder.Declare("uWorkorder")
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'Coded by: WAW
+'Date: 07/16/2015
+V.local.sordernum.Declare(String)
+V.Local.sduedate.Declare(String)
+V.Local.sworkorder.Declare(String)
+V.Local.ssql.Declare(String)
+V.Local.ssuff.Declare(String)
+V.Local.ssql2.Declare(String)
+V.Local.i.Declare(Long)
+V.Local.sprice.Declare(String)
+V.Local.i2.Declare(Long)
+V.Local.spart.Declare(String)
+V.local.sduedatecheck.Declare(String)
+V.Local.sfile.Declare(String)
+V.Local.bfilecheck.Declare(Boolean)
+V.Local.bfilecheck2.Declare(Boolean)
+V.Local.sfileret.Declare(String)
+V.Local.spricecheck.Declare(String)
+V.Local.sline.Declare(String)
+V.Local.sfile2.Declare(String)
+V.Local.sfileret2.Declare(String)
+V.Local.sformattedduedate.Declare(String)
+V.Local.sorderheader.Declare(String)
+V.Local.sduedateheader.Declare(String)
+
+'open connection to the database
+F.ODBC.Connection!con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+'if the order number on the header screen changes set the due date to local variable
+F.Intrinsic.Control.If(V.Caller.Hook,=,11565)
+	V.Local.sduedateheader.Set(V.Passed.000024)
+	'format the variable appropriately	
+	F.Intrinsic.Control.If(V.Local.sduedateheader,=,00000000)
+		V.Local.sduedateheader.Set("19000101")
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.If(V.Local.sduedateheader,=,"")
+		V.Local.sduedateheader.Set("19000101")
+	F.Intrinsic.Control.EndIf
+	'format the due date
+	F.Intrinsic.Date.ConvertDString(V.Local.sduedateheader,"YYYYMMDD",V.Local.sduedateheader)
+	F.Intrinsic.string.format(V.Local.sduedateheader,"YYMMDD",V.Local.sduedateheader)
+	'build a temporary text file with that date value stored
+	F.Intrinsic.String.Build("{0}\DUEDATE.TXT",V.Caller.FilesDir,V.Local.sfile)
+	F.Intrinsic.File.Exists(V.Local.sfile,V.Local.bfilecheck)
+	F.Intrinsic.Control.If(V.Local.bfilecheck,=,True)
+		F.Intrinsic.File.DeleteFile(V.Local.sfile)
+		F.Intrinsic.File.string2file(V.Local.sfile,V.Local.sduedateheader)
+	F.Intrinsic.control.Else
+		F.Intrinsic.File.String2File(V.Local.sfile,V.Local.sduedateheader)
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+'if the save button on the order header screen is selected
+F.Intrinsic.Control.If(V.caller.Hook,=,11870)
+	V.Local.sorderheader.Set(V.Passed.000003)
+	V.Local.sduedateheader.Set(V.Passed.000024)
+	F.Intrinsic.String.LPad(V.Local.sorderheader,"0",7,V.Local.sorderheader)
+
+	F.Intrinsic.Control.If(V.Local.sduedateheader,=,00000000)
+		V.Local.sduedateheader.Set("19000101")
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.If(V.Local.sduedateheader,=,"")
+		V.Local.sduedateheader.Set("19000101")
+	F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.Date.convertdstring(V.local.sduedateheader,"YYYY/MM/DD",V.Local.sformattedduedate)
+'	F.Intrinsic.Date.convertdstring(V.local.sformattedduedate,"YYYY/MM/DD",V.Local.sformattedduedate)
+	F.Intrinsic.String.Format(V.Local.sformattedduedate,"MM/DD/YY",V.Local.sformattedduedate)
+	F.Intrinsic.String.Replace(V.Local.sformattedduedate,"/","",V.Local.sformattedduedate)
+	'changed formatting
+	F.Intrinsic.Date.ConvertDString(V.Local.sduedateheader,"YYYYMMDD",V.Local.sduedateheader)
+	F.Intrinsic.string.format(V.Local.sduedateheader,"YYMMDD",V.Local.sduedateheader)
+
+	F.Intrinsic.String.Build("{0}\DUEDATE.TXT",V.Caller.FilesDir,V.Local.sfile)
+	F.Intrinsic.File.Exists(V.Local.sfile,V.Local.bfilecheck)
+	F.Intrinsic.Control.If(V.Local.bfilecheck,=,True)
+		F.Intrinsic.File.File2String(V.Local.sfile,V.Local.sfileret)
+	F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.Control.If(V.Local.sfileret,<>,V.Local.sduedateheader)
+		'setordernumberandpadit.setpartandrevtoalocalvariable
+		V.Local.sordernum.Set(V.Passed.000003)
+		F.Intrinsic.String.LPad(V.Local.sordernum,"0",7,V.Local.sordernum)
+		'select all jobs/suffixes associated with the current order number
+		F.Intrinsic.String.Build("Select JOB, SUFFIX, PART from V_ORDER_TO_WO where ORDER_NO = '{0}'",V.Local.sordernum,V.Local.ssql)
+
+		F.ODBC.Connection!con.OpenRecordsetRO("rst",V.local.ssql)
+		F.Intrinsic.Control.If(V.ODBC.con!rst.EOF,=,False)
+			'load them to a UDT
+			F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","uglobal.uworkorder","False",1000)
+			F.ODBC.con!rst.close
+			'loop through the UDT
+			F.Intrinsic.control.For(V.Local.i2,V.uGlobal.uWorkorder.LBound,V.uglobal.uWorkorder.UBound,1)
+				'update the price per unit for each JOB where job, suffix and part are all equal to what the user is currently looking at
+				F.Intrinsic.String.Build("UPDATE JOB_HEADER SET DATE_DUE= '{0}' where JOB = '{1}' and SUFFIX = '{2}' and PART = '{3}'",V.local.sformattedduedate,V.uGlobal.uWorkorder(v.Local.i2)!JOB,V.uglobal.uworkorder(v.local.i2)!SUFFIX,V.uglobal.uworkorder(v.local.i2)!PART,V.Local.ssql2)
+				F.ODBC.Connection!con.OpenRecordsetRW("rst2",V.Local.ssql2)
+				F.ODBC.con!Rst2.Close
+			F.Intrinsic.Control.Next(V.Local.i2)
+		'if no jobs/suffixes close connection
+		F.Intrinsic.Control.Else
+			F.ODBC.con!rst.Close
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.EndIf
+
+'if the line change hook fires
+F.intrinsic.control.if(V.Caller.Hook,=,12705)
+	'set the price to a local variable
+	V.Local.sprice.Set(V.Passed.000105)
+	V.Local.sduedate.Set(V.Passed.000011)
+	F.Intrinsic.Control.If(V.Local.sduedate,=,00000000)
+		V.Local.sduedate.Set("19000101")
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.If(V.Local.sduedate,=,"")
+		V.Local.sduedate.Set("19000101")
+	F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.Date.ConvertDString(V.Local.sduedate,"YYYYMMDD",V.Local.sduedate)
+	F.Intrinsic.string.format(V.Local.sduedate,"YYMMDD",V.Local.sduedate)
+	'set the promise dates' field as a string variable and save to a file
+	F.Intrinsic.String.Build("{0}\DUEDATE.TXT",V.Caller.FilesDir,V.Local.sfile)
+	F.Intrinsic.File.Exists(V.Local.sfile,V.Local.bfilecheck)
+	F.Intrinsic.Control.If(V.Local.bfilecheck,=,True)
+		F.Intrinsic.File.DeleteFile(V.Local.sfile)
+		F.Intrinsic.File.string2file(V.Local.sfile,V.Local.sduedate)
+	F.Intrinsic.control.Else
+		F.Intrinsic.File.String2File(V.Local.sfile,V.Local.sduedate)
+	F.Intrinsic.Control.EndIf
+
+	'write a temp text file with the price amount
+	F.Intrinsic.String.Build("{0}\PRICECHECK.TXT",V.Caller.FilesDir,V.Local.sfile2)
+	F.Intrinsic.File.Exists(V.Local.sfile2,V.Local.bfilecheck2)
+	'if the file already exists delete it and create a new one
+	F.Intrinsic.Control.If(V.Local.bfilecheck2,=,True)
+		F.Intrinsic.File.Deletefile(V.Local.sfile2)
+		F.Intrinsic.File.String2File(V.Local.sfile2,V.Local.sprice)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.File.String2File(V.Local.sfile2,V.Local.sprice)
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+'if the save button on the order entry lines screen is clicked
+F.Intrinsic.Control.If(V.Caller.Hook,=,12230)
+
+	V.Local.sduedate.Set(V.Passed.000011)
+	F.Intrinsic.Control.If(V.Local.sduedate,=,00000000)
+		V.Local.sduedate.Set("19000101")
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.If(V.Local.sduedate,=,"")
+		V.Local.sduedate.Set("19000101")
+	F.Intrinsic.Control.EndIf
+'	V.Local.sformattedduedate.Set(V.passed.000011)
+	F.Intrinsic.Date.convertdstring(V.local.sduedate,"YYYY/MM/DD",V.Local.sformattedduedate)
+
+'	F.Intrinsic.Date.convertdstring(V.local.sformattedduedate,"YYYY/MM/DD",V.Local.sformattedduedate)
+	F.Intrinsic.String.Format(V.Local.sformattedduedate,"MM/DD/YY",V.Local.sformattedduedate)
+	F.Intrinsic.String.Replace(V.Local.sformattedduedate,"/","",V.Local.sformattedduedate)
+
+	V.Local.sprice.Set(V.Passed.000105)
+	V.Local.sline.set(V.Passed.000051)
+''
+	F.Intrinsic.Date.ConvertDString(V.Local.sduedate,"YYYYMMDD",V.Local.sduedate)
+	F.Intrinsic.string.format(V.Local.sduedate,"YYMMDD",V.Local.sduedate)
+	F.Intrinsic.String.LPad(V.Local.sline,"0",3,V.Local.sline)
+'	F.Intrinsic.String.RPad(V.Local.sline,"0",1,V.Local.sline)
+	F.Intrinsic.String.Build("{0}{1}",V.Local.sline,"0",V.Local.sline)
+
+		F.Intrinsic.String.Build("{0}\PRICECHECK.TXT",V.Caller.FilesDir,V.Local.sfile2)
+	F.Intrinsic.File.Exists(V.Local.sfile2,V.Local.bfilecheck2)
+	F.Intrinsic.Control.If(V.Local.bfilecheck2,=,True)
+		F.Intrinsic.File.File2String(V.Local.sfile2,V.Local.sfileret2)
+	F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.String.Build("{0}\DUEDATE.TXT",V.Caller.FilesDir,V.Local.sfile)
+	F.Intrinsic.File.Exists(V.Local.sfile,V.Local.bfilecheck)
+	F.Intrinsic.Control.If(V.Local.bfilecheck,=,True)
+		F.Intrinsic.File.File2String(V.Local.sfile,V.Local.sfileret)
+	F.Intrinsic.Control.EndIf
+
+	'If the return from the temp file does not equal the price, update the price in the JOB_Header table
+	F.Intrinsic.Control.If(V.Local.sfileret2,<>,V.Local.sprice)
+
+		'setordernumberandpadit.setpartandrevtoalocalvariable
+		V.Local.sordernum.Set(V.Passed.000060)
+'		V.Local.sline.Set(V.Passed.000051)
+		F.Intrinsic.String.LPad(V.Local.sordernum,"0",7,V.Local.sordernum)
+		F.Intrinsic.String.GSSPartString(V.Passed.000052,V.Passed.000053,V.Local.spart)
+		'select all jobs/suffixes associated with the current order number
+'		F.Intrinsic.String.Build("Select JOB, SUFFIX,PART from V_ORDER_TO_WO where ORDER_NO = '{0}' and ORDER_LINE = '{1}' and PART = '{2}'",V.Local.sordernum,V.local.sline,V.local.spart,V.Local.ssql)
+		F.Intrinsic.String.Build("Select JOB, SUFFIX, PART from V_ORDER_TO_WO where ORDER_NO = '{0}'  and PART = '{1}' and ORDER_LINE = '{2}'",V.Local.sordernum,V.local.spart,V.local.sline,V.Local.ssql)
+
+		F.ODBC.Connection!con.OpenRecordsetRO("rst",V.local.ssql)
+		F.Intrinsic.Control.If(V.ODBC.con!rst.EOF,=,False)
+			'load them to a UDT
+			F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","uglobal.uworkorder","False",1000)
+			F.ODBC.con!rst.close
+			'loop through the UDT
+			F.Intrinsic.control.For(V.Local.i2,V.uGlobal.uWorkorder.LBound,V.uglobal.uWorkorder.UBound,1)
+				'update the price per unit for each JOB where job, suffix and part are all equal to what the user is currently looking at
+				F.Intrinsic.String.Build("UPDATE JOB_HEADER SET AMT_PRICE_PER_UNIT = '{0}' where JOB = '{1}' and SUFFIX = '{2}' and PART = '{3}'",V.Local.sprice,V.uGlobal.uWorkorder(v.Local.i2)!JOB,V.uGlobal.uWorkorder(v.Local.i2)!SUFFIX,V.uglobal.uWorkorder(v.Local.i2)!PART,V.Local.ssql2)
+				F.ODBC.Connection!con.OpenRecordsetRW("rst2",V.Local.ssql2)
+				F.ODBC.con!Rst2.Close
+			F.Intrinsic.Control.Next(V.Local.i2)
+		'if no jobs/suffixes close connection
+		F.Intrinsic.Control.Else
+			F.ODBC.con!rst.Close
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+
+	'If the return from the temp file does not equal the price, update the price in the JOB_Header table
+	F.Intrinsic.Control.If(V.Local.sfileret,<>,V.Local.sduedate)
+		'setordernumberandpadit.setpartandrevtoalocalvariable
+		V.Local.sordernum.Set(V.Passed.000060)
+		F.Intrinsic.String.LPad(V.Local.sordernum,"0",7,V.Local.sordernum)
+		F.Intrinsic.String.GSSPartString(V.Passed.000052,V.Passed.000053,V.Local.spart)
+		'select all jobs/suffixes associated with the current order number
+		F.Intrinsic.String.Build("Select JOB, SUFFIX, PART from V_ORDER_TO_WO where ORDER_NO = '{0}'  and PART = '{1}' and ORDER_LINE = '{2}'",V.Local.sordernum,V.local.spart,V.local.sline,V.Local.ssql)
+
+		F.ODBC.Connection!con.OpenRecordsetRO("rst",V.local.ssql)
+		F.Intrinsic.Control.If(V.ODBC.con!rst.EOF,=,False)
+			'load them to a UDT
+			F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","uglobal.uworkorder","False",1000)
+			F.ODBC.con!rst.close
+			'loop through the UDT
+			F.Intrinsic.control.For(V.Local.i2,V.uGlobal.uWorkorder.LBound,V.uglobal.uWorkorder.UBound,1)
+				'update the price per unit for each JOB where job, suffix and part are all equal to what the user is currently looking at
+				F.Intrinsic.String.Build("UPDATE JOB_HEADER SET DATE_DUE= '{0}' where JOB = '{1}' and SUFFIX = '{2}' and PART = '{3}'",V.local.sformattedduedate,V.uGlobal.uWorkorder(v.Local.i2)!JOB,V.uGlobal.uWorkorder(v.Local.i2)!SUFFIX,V.uglobal.uWorkorder(v.Local.i2)!PART,V.Local.ssql2)
+				F.ODBC.Connection!con.OpenRecordsetRW("rst2",V.Local.ssql2)
+				F.ODBC.con!Rst2.Close
+			F.Intrinsic.Control.Next(V.Local.i2)
+		'if no jobs/suffixes close connection
+		F.Intrinsic.Control.Else
+			F.ODBC.con!rst.Close
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+
+'delete both files
+'F.Intrinsic.File.DeleteFile(V.Local.sfile)
+'F.Intrinsic.File.Deletefile(V.Local.sfile2)
+
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_3869_PriceDueDate_Update",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.SetErrorHandler("Unload_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'closes the program
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Unload_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_3869_PriceDueDate_Update",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.end
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Unload.End
+
+Program.Sub.Comments.Start
+${$0$}$GCG_Auto_Update_WO$}$WAW$}$7/16/2015
+Program.Sub.Comments.End
+
